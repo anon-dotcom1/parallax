@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Plus, DollarSign, TrendingUp, Wallet, PiggyBank } from 'lucide-react';
+import { useCurrency } from '../contexts/CurrencyContext';
 
 export default function Budget({ user }) {
   const [activeTab, setActiveTab] = useState('transactions');
@@ -8,6 +9,7 @@ export default function Budget({ user }) {
   const [savingsGoals, setSavingsGoals] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [summary, setSummary] = useState({ income: 0, expenses: 0 });
+  const { formatAmount, symbol } = useCurrency();
 
   useEffect(() => {
     loadData();
@@ -78,19 +80,19 @@ export default function Budget({ user }) {
         <div className="card">
           <p className="text-sm text-gray-600 dark:text-gray-400">This Month Income</p>
           <p className="text-3xl font-bold text-green-600 dark:text-green-400 mt-2">
-            ${summary.income.toFixed(2)}
+            {formatAmount(summary.income)}
           </p>
         </div>
         <div className="card">
           <p className="text-sm text-gray-600 dark:text-gray-400">This Month Expenses</p>
           <p className="text-3xl font-bold text-red-600 dark:text-red-400 mt-2">
-            ${summary.expenses.toFixed(2)}
+            {formatAmount(summary.expenses)}
           </p>
         </div>
         <div className="card">
           <p className="text-sm text-gray-600 dark:text-gray-400">Net</p>
           <p className={`text-3xl font-bold mt-2 ${summary.income - summary.expenses >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-            ${(summary.income - summary.expenses).toFixed(2)}
+            {formatAmount(summary.income - summary.expenses)}
           </p>
         </div>
       </div>
@@ -118,20 +120,20 @@ export default function Budget({ user }) {
         })}
       </div>
 
-      {showForm && activeTab === 'transactions' && <TransactionForm onSave={() => { setShowForm(false); loadData(); }} />}
-      {showForm && activeTab === 'goals' && <SavingsGoalForm onSave={() => { setShowForm(false); loadData(); }} />}
+      {showForm && activeTab === 'transactions' && <TransactionForm onSave={() => { setShowForm(false); loadData(); }} symbol={symbol} />}
+      {showForm && activeTab === 'goals' && <SavingsGoalForm onSave={() => { setShowForm(false); loadData(); }} symbol={symbol} />}
 
       {!showForm && (
         <div className="space-y-4">
-          {activeTab === 'transactions' && <TransactionsList data={transactions} onRefresh={loadData} />}
-          {activeTab === 'goals' && <SavingsGoalsList data={savingsGoals} onRefresh={loadData} />}
+          {activeTab === 'transactions' && <TransactionsList data={transactions} onRefresh={loadData} formatAmount={formatAmount} />}
+          {activeTab === 'goals' && <SavingsGoalsList data={savingsGoals} onRefresh={loadData} formatAmount={formatAmount} />}
         </div>
       )}
     </div>
   );
 }
 
-function TransactionForm({ onSave }) {
+function TransactionForm({ onSave, symbol }) {
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split('T')[0],
     amount: '',
@@ -189,7 +191,7 @@ function TransactionForm({ onSave }) {
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium mb-1">Amount ($)</label>
+            <label className="block text-sm font-medium mb-1">Amount ({symbol})</label>
             <input
               type="number"
               step="0.01"
@@ -243,7 +245,7 @@ function TransactionForm({ onSave }) {
   );
 }
 
-function SavingsGoalForm({ onSave }) {
+function SavingsGoalForm({ onSave, symbol }) {
   const [formData, setFormData] = useState({
     name: '',
     target_amount: '',
@@ -282,7 +284,7 @@ function SavingsGoalForm({ onSave }) {
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium mb-1">Target Amount ($)</label>
+            <label className="block text-sm font-medium mb-1">Target Amount ({symbol})</label>
             <input
               type="number"
               step="0.01"
@@ -293,7 +295,7 @@ function SavingsGoalForm({ onSave }) {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Current Amount ($)</label>
+            <label className="block text-sm font-medium mb-1">Current Amount ({symbol})</label>
             <input
               type="number"
               step="0.01"
@@ -335,7 +337,7 @@ function SavingsGoalForm({ onSave }) {
   );
 }
 
-function TransactionsList({ data, onRefresh }) {
+function TransactionsList({ data, onRefresh, formatAmount }) {
   const deleteTransaction = async (id) => {
     if (!confirm('Delete this transaction?')) return;
     const token = localStorage.getItem('token');
@@ -365,7 +367,7 @@ function TransactionsList({ data, onRefresh }) {
           </div>
           <div className="flex items-center gap-3">
             <p className={`text-lg font-bold ${txn.type === 'income' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-              {txn.type === 'income' ? '+' : '-'}${parseFloat(txn.amount).toFixed(2)}
+              {txn.type === 'income' ? '+' : '-'}{formatAmount(txn.amount)}
             </p>
             <button
               onClick={() => deleteTransaction(txn.id)}
@@ -380,7 +382,7 @@ function TransactionsList({ data, onRefresh }) {
   );
 }
 
-function SavingsGoalsList({ data, onRefresh }) {
+function SavingsGoalsList({ data, onRefresh, formatAmount }) {
   const [updating, setUpdating] = useState(null);
   const [amount, setAmount] = useState('');
 
@@ -420,7 +422,7 @@ function SavingsGoalsList({ data, onRefresh }) {
                 )}
               </div>
               <p className="text-2xl font-bold text-primary-600 dark:text-primary-400">
-                ${parseFloat(goal.current_amount).toFixed(0)}
+                {formatAmount(goal.current_amount)}
               </p>
             </div>
             <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-4 mb-2">
@@ -431,7 +433,7 @@ function SavingsGoalsList({ data, onRefresh }) {
             </div>
             <div className="flex justify-between text-sm">
               <span>{progress.toFixed(1)}% complete</span>
-              <span className="text-gray-600 dark:text-gray-400">${remaining.toFixed(0)} to go</span>
+              <span className="text-gray-600 dark:text-gray-400">{formatAmount(remaining)} to go</span>
             </div>
             
             {updating === goal.id ? (

@@ -1,203 +1,210 @@
 import { useEffect, useState } from 'react';
-import { Heart, Trophy, Globe, DollarSign, TrendingUp, Calendar } from 'lucide-react';
 import axios from 'axios';
+import { Activity, DollarSign, Target, Plane } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 export default function Dashboard({ user }) {
   const [stats, setStats] = useState({
     recentWorkouts: 0,
-    currentWeight: null,
-    savingsProgress: 0,
-    monthlySpent: 0
+    monthlyExpenses: 0,
+    savingsGoals: 0,
+    pets: 0
   });
+  const [recentActivity, setRecentActivity] = useState([]);
 
   useEffect(() => {
-    loadDashboardData();
+    loadDashboard();
   }, []);
 
-  const loadDashboardData = async () => {
+  const loadDashboard = async () => {
     const token = localStorage.getItem('token');
     const config = { headers: { Authorization: `Bearer ${token}` } };
 
     try {
-      // Load recent data from each module
-      const [workouts, metrics, goals] = await Promise.all([
-        axios.get('/api/health/workouts?limit=7', config),
-        axios.get('/api/health/metrics?limit=1', config),
-        axios.get('/api/budget/savings-goals', config)
+      // Get actual data from APIs
+      const [workouts, transactions, goals, pets] = await Promise.all([
+        axios.get('/api/health/workouts', config).catch(() => ({ data: [] })),
+        axios.get('/api/budget/transactions', config).catch(() => ({ data: [] })),
+        axios.get('/api/budget/savings-goals', config).catch(() => ({ data: [] })),
+        axios.get('/api/escape-plan/pets', config).catch(() => ({ data: [] }))
       ]);
 
+      // Calculate this month's expenses
+      const thisMonth = new Date().getMonth();
+      const thisYear = new Date().getFullYear();
+      const monthlyExpenses = transactions.data
+        .filter(t => {
+          const date = new Date(t.date);
+          return t.type === 'expense' && 
+                 date.getMonth() === thisMonth && 
+                 date.getFullYear() === thisYear;
+        })
+        .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+
       setStats({
-        recentWorkouts: workouts.data.length,
-        currentWeight: metrics.data[0]?.weight,
-        savingsProgress: calculateSavingsProgress(goals.data),
-        monthlySpent: 0 // Will calculate from transactions
+        recentWorkouts: workouts.data.filter(w => {
+          const weekAgo = new Date();
+          weekAgo.setDate(weekAgo.getDate() - 7);
+          return new Date(w.date) >= weekAgo;
+        }).length,
+        monthlyExpenses: monthlyExpenses,
+        savingsGoals: goals.data.length,
+        pets: pets.data.length
       });
+
+      // Build recent activity from actual data
+      const activity = [];
+      
+      // Add recent workouts (last 3)
+      workouts.data.slice(0, 3).forEach(w => {
+        activity.push({
+          text: `Logged ${w.type} workout`,
+          time: formatTimeAgo(w.created_at),
+          icon: Activity,
+          link: '/health'
+        });
+      });
+
+      // Add recent transactions (last 3)
+      transactions.data.slice(0, 3).forEach(t => {
+        activity.push({
+          text: `${t.type === 'income' ? 'Added income' : 'Added expense'} - ${t.category}`,
+          time: formatTimeAgo(t.created_at),
+          icon: DollarSign,
+          link: '/budget'
+        });
+      });
+
+      // Sort by most recent
+      activity.sort((a, b) => new Date(b.time) - new Date(a.time));
+      setRecentActivity(activity.slice(0, 5));
+
     } catch (error) {
       console.error('Error loading dashboard:', error);
     }
   };
 
-  const calculateSavingsProgress = (goals) => {
-    if (!goals.length) return 0;
-    const total = goals.reduce((sum, g) => sum + parseFloat(g.current_amount), 0);
-    const target = goals.reduce((sum, g) => sum + parseFloat(g.target_amount), 0);
-    return target > 0 ? Math.round((total / target) * 100) : 0;
+  const formatTimeAgo = (timestamp) => {
+    const now = new Date();
+    const date = new Date(timestamp);
+    const seconds = Math.floor((now - date) / 1000);
+    
+    if (seconds < 60) return 'Just now';
+    if (seconds < 3600) return `${Math.floor(seconds / 60)} minutes ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)} hours ago`;
+    if (seconds < 604800) return `${Math.floor(seconds / 86400)} days ago`;
+    return date.toLocaleDateString();
   };
 
-  const quickStats = [
-    {
-      title: 'Health',
-      icon: Heart,
-      color: 'text-red-600',
-      bgColor: 'bg-red-100 dark:bg-red-900/30',
-      value: stats.currentWeight ? `${stats.currentWeight} lbs` : '--',
-      subtitle: 'Current weight',
-      link: '/health'
-    },
-    {
-      title: 'Sports',
-      icon: Trophy,
-      color: 'text-yellow-600',
-      bgColor: 'bg-yellow-100 dark:bg-yellow-900/30',
-      value: stats.recentWorkouts,
-      subtitle: 'Workouts this week',
-      link: '/sports'
-    },
-    {
-      title: 'Escape Plan',
-      icon: Globe,
-      color: 'text-blue-600',
-      bgColor: 'bg-blue-100 dark:bg-blue-900/30',
-      value: `${stats.savingsProgress}%`,
-      subtitle: 'Savings progress',
-      link: '/escape-plan'
-    },
-    {
-      title: 'Budget',
-      icon: DollarSign,
-      color: 'text-green-600',
-      bgColor: 'bg-green-100 dark:bg-green-900/30',
-      value: `$${stats.monthlySpent}`,
-      subtitle: 'Spent this month',
-      link: '/budget'
-    }
-  ];
-
   return (
-    <div className="space-y-8">
-      {/* Header */}
+    <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Welcome back, {user.name}!</h1>
         <p className="text-gray-600 dark:text-gray-400 mt-1">
-          Here's your overview for today
+          Here's what's happening with your goals
         </p>
       </div>
 
-      {/* Quick Stats */}
+      {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {quickStats.map((stat) => {
-          const Icon = stat.icon;
-          return (
-            <a
-              key={stat.title}
-              href={stat.link}
-              className="card hover:shadow-lg transition-shadow cursor-pointer"
-            >
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                    {stat.title}
-                  </p>
-                  <p className="text-3xl font-bold mt-2">{stat.value}</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    {stat.subtitle}
-                  </p>
-                </div>
-                <div className={`p-3 rounded-lg ${stat.bgColor}`}>
-                  <Icon className={`w-6 h-6 ${stat.color}`} />
-                </div>
-              </div>
-            </a>
-          );
-        })}
+        <Link to="/health" className="card hover:shadow-lg transition-shadow">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+              <Activity className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-600 dark:text-gray-400">Workouts This Week</p>
+              <p className="text-2xl font-bold">{stats.recentWorkouts}</p>
+            </div>
+          </div>
+        </Link>
+
+        <Link to="/budget" className="card hover:shadow-lg transition-shadow">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-green-100 dark:bg-green-900/30 rounded-lg">
+              <DollarSign className="w-6 h-6 text-green-600 dark:text-green-400" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-600 dark:text-gray-400">Monthly Expenses</p>
+              <p className="text-2xl font-bold">${stats.monthlyExpenses.toFixed(0)}</p>
+            </div>
+          </div>
+        </Link>
+
+        <Link to="/budget" className="card hover:shadow-lg transition-shadow">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
+              <Target className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-600 dark:text-gray-400">Savings Goals</p>
+              <p className="text-2xl font-bold">{stats.savingsGoals}</p>
+            </div>
+          </div>
+        </Link>
+
+        <Link to="/escape-plan" className="card hover:shadow-lg transition-shadow">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-orange-100 dark:bg-orange-900/30 rounded-lg">
+              <Plane className="w-6 h-6 text-orange-600 dark:text-orange-400" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-600 dark:text-gray-400">Pets to Relocate</p>
+              <p className="text-2xl font-bold">{stats.pets}</p>
+            </div>
+          </div>
+        </Link>
       </div>
 
       {/* Recent Activity */}
       <div className="card">
         <h2 className="text-xl font-bold mb-4">Recent Activity</h2>
-        <div className="space-y-3">
-          <ActivityItem
-            icon={<Heart className="w-5 h-5 text-red-600" />}
-            title="Logged workout"
-            time="2 hours ago"
-          />
-          <ActivityItem
-            icon={<DollarSign className="w-5 h-5 text-green-600" />}
-            title="Added expense - Groceries"
-            time="5 hours ago"
-          />
-          <ActivityItem
-            icon={<Globe className="w-5 h-5 text-blue-600" />}
-            title="Saved country comparison"
-            time="Yesterday"
-          />
-        </div>
+        {recentActivity.length > 0 ? (
+          <div className="space-y-3">
+            {recentActivity.map((activity, idx) => {
+              const Icon = activity.icon;
+              return (
+                <Link
+                  key={idx}
+                  to={activity.link}
+                  className="flex items-center gap-3 p-3 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                >
+                  <div className="p-2 bg-gray-100 dark:bg-gray-800 rounded-lg">
+                    <Icon className="w-4 h-4" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">{activity.text}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{activity.time}</p>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-gray-500 text-center py-8">
+            No activity yet. Start tracking your health, budget, or escape plan!
+          </p>
+        )}
       </div>
 
       {/* Quick Actions */}
       <div className="card">
         <h2 className="text-xl font-bold mb-4">Quick Actions</h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <QuickAction
-            icon={<Heart />}
-            label="Log Workout"
-            href="/health"
-          />
-          <QuickAction
-            icon={<TrendingUp />}
-            label="Add Weight"
-            href="/health"
-          />
-          <QuickAction
-            icon={<DollarSign />}
-            label="Add Expense"
-            href="/budget"
-          />
-          <QuickAction
-            icon={<Globe />}
-            label="Compare Countries"
-            href="/escape-plan"
-          />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+          <Link to="/health" className="btn-primary text-center">
+            Log Workout
+          </Link>
+          <Link to="/budget" className="btn-primary text-center">
+            Add Expense
+          </Link>
+          <Link to="/escape-plan" className="btn-primary text-center">
+            Update Savings
+          </Link>
+          <Link to="/sports" className="btn-primary text-center">
+            Log Training
+          </Link>
         </div>
       </div>
     </div>
-  );
-}
-
-function ActivityItem({ icon, title, time }) {
-  return (
-    <div className="flex items-center gap-3 p-3 rounded-lg bg-gray-50 dark:bg-gray-700/50">
-      <div className="p-2 rounded-lg bg-white dark:bg-gray-800">
-        {icon}
-      </div>
-      <div className="flex-1">
-        <p className="font-medium">{title}</p>
-        <p className="text-xs text-gray-500 dark:text-gray-400">{time}</p>
-      </div>
-    </div>
-  );
-}
-
-function QuickAction({ icon, label, href }) {
-  return (
-    <a
-      href={href}
-      className="flex flex-col items-center gap-2 p-4 rounded-lg bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-    >
-      <div className="p-2 rounded-lg bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400">
-        {icon}
-      </div>
-      <span className="text-sm font-medium text-center">{label}</span>
-    </a>
   );
 }
